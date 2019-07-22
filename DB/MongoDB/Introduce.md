@@ -16,7 +16,7 @@ MongoDB把每条数据记录存成一个文档，若干文档存放在一起形�
 
 在MongoDB里一条数据记录就是一个BSON文档，文档是由多个键值对组成的数据结构。MongoDB的文档格式上类似于JSON对象。在文档中可以包含其他文档、数组或者文档数组。
 
-![document.png](https://github.com/saltedFish62/notes/blob/master/DB/MongoDB/assets/document.png?raw=true)
+![image-20190722132751569](http://ww4.sinaimg.cn/large/006tNc79gy1g58jx1jfxkj30yq09qmy8.jpg)
 
 使用文档的优点：
 
@@ -115,7 +115,7 @@ MongoDB用一下的顺序来比较对象：
 
 MongoDB存储BSON格式的文档到集合里，集合存在数据库里。
 
-![document.png](https://github.com/saltedFish62/notes/blob/master/DB/MongoDB/assets/document.png?raw=true)
+![image-20190722132751569](http://ww4.sinaimg.cn/large/006tNc79gy1g58jx1jfxkj30yq09qmy8.jpg)
 
 ### Views 视图
 

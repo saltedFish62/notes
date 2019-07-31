@@ -285,3 +285,253 @@ db.events.find().sort( { username: 1, date: 1 } )
 
 ## Multikey Indexes 多键索引
 
+​	为了索引一个值为数组的字段，MongoDB会给数组中的每个元素都建立一个索引。这些多键索引可以针对数组字段值进行高效索引。可以在包含标量值(比如字符串和数字)和嵌套文档的数组建立多键索引。
+
+![image-20190729200058337](http://ww1.sinaimg.cn/large/006tNc79gy1g5gym7vl0uj30y80j2wfe.jpg)
+
+### Create Multikey Index 创建多键索引
+
+​	使用 `db.collection.createIndex()` 来创建多键索引：
+
+```js
+db.coll.createIndex( { <field>: < 1 or -1> } )
+```
+
+​	如果任意被索引的字段是一个数组，MongoDB会自动地创建多键索引；你不需要特别地去声明多键索引。
+
+### Multikey Index Bounds 多键索引边界
+
+​	索引扫描的边界定义了一个查询中索引搜索的范围。当一个已存在的索引有多个谓词时，MongoDB会尝试用取交集或者组合的手段组合这些谓词的边界，以此缩小扫描的边界。
+
+#### Intersect Bounds for Multikey Index 多键索引边界取交集
+
+​	边界的交集指多个边界的逻辑与。例如：有两个边界 [ [ 3, Infinity ] ] 和 [ [ -Infinity, 6 ] ]，那么这两个边界的交集就是 [ [ 3, 6 ] ]。
+
+​	给定一个索引的数组字段，考虑有一个在数组上声明多前缀并且可以使用多键索引的查询。如果一个[`$elemMatch`](https://docs.mongodb.com/manual/reference/operator/query/elemMatch/#op._S_elemMatch)联合这些谓词，MongoDB可以对多键索引的边界取交集。
+
+​	比如，一个survey集合有包含字段 **item** 和字段 **ratings** 的文档：
+
+```js
+{ _id: 1, item: "ABC", ratings: [ 2, 9 ] }
+{ _id: 2, item: "XYZ", ratings: [ 4, 3 ] }
+```
+
+​	给 **ratings** 数组创建一个多键索引：
+
+```js
+db.survey.createIndex( { ratings: 1 } )
+```
+
+​	接下来的查询使用 `$elemMatch` 来获取数组中包含至少一个元素满足两个条件的文档：
+
+```js
+db.survey.find( { ratings: { $elemMatch: { $gte: 3, $lte: 6 } } } )
+```
+
+​	接下来讨论每一个谓词：
+
+- 大于等于3的谓词(即 **$gte: 3**)的边界是: [ [3, Infinity ] ];
+- 小于等于6的谓词(即 **$lte: 6**)的边界是：[ [ -Infinity, 6 ] ]
+
+​    由于查询使用 `$elemMatch` 来联结这些谓词，MongoDB可以给这些边界取交集：
+
+```js
+ratings: [ [ 3, 6 ] ]
+```
+
+​	如果查询没有联结这些条件，MongoDB不能取索引边界的交集，查询如下：
+
+```js
+db.survey.find( { ratings: { $gte: 3, $lte: 6 } } )
+```
+
+​	查询会搜索 **ratings** 数组，找满足至少一个元素大于等于3并且至少一个元素小于等于6的数组。由于单一个元素不需要同时满足两个边界，MongoDB不会取边界的交集而是使用[ [ 3, Infinity ] ]或者[ [ -Infinity, 6 ] ]。MongoDB不保证使用这两个边界的哪个。
+
+#### Compound Bounds for Multikey Index 多键索引的复合边界
+
+​	复合边界是指使用复合索引的多键的边界。比如，给定一个字段 **a** 有边界 [ [ 3, Infinity ] ] 并且字段 **b** 有边界 [ [ -Infinity, 6 ] ] 的复合索引 **{ a: 1, b: 1 }**，复合边界会使用两个边界：
+
+```js
+ { a: [ [ 3, Infinity ] ], b: [ [ -Infinity, 6 ] ] }
+```
+
+​	如果MongoDB不可以复合两个边界，则它总是使用首个字段的边界来约束索引扫描的范围，在这个例子中，边界就是 **a: [ [ 3, Infinity ] ]**。
+
+##### Compound Index on an Array Field 数组字段上的复合索引
+
+考虑一个复合多键索引，即其中一个索引字段为数组的复合索引。比如，一个 **sorvey** 集合，其中的文档有字段 **item** 和字段 **ratings**：
+
+```js
+{ _id: 1, item: "ABC", ratings: [ 2, 9 ] }
+{ _id: 2, item: "XYZ", ratings: [ 4, 3 ] }
+```
+
+​	在字段 **item** 和 **ratings** 上建立复合索引：
+
+```js
+db.survey.createIndex( { item: 1, ratings: 1 } )
+```
+
+​	以下查询声明了对两个键的条件：
+
+```js
+db.survey.find( { item: "XYZ", ratings: { $gte: 3 } } )
+```
+
+​	单独考虑每个谓词：
+
+- **item** 的边界： 谓词"XYZ"为 [ [  "XYZ", "XYZ" ] ];
+- **ratings** 的边界：谓词 { $gte: 3 } 为 [ [ 3, Infinity ] ]
+
+​    MongoDB可以通过联结复合两个边界：
+
+```js
+{ item: [ [ "XYZ", "XYZ" ] ], ratings: [ [ 3, Infinity ] ] }
+```
+
+##### Compound Index on Fields from an Array of Embedded Documents 在嵌套文档数组中的字段上的复合索引
+
+​	如果一个数组包含了嵌套文档，用[点字段名](https://docs.mongodb.com/manual/core/document/#document-dot-notation)的方式来给数组中的嵌套文档的字段建立索引。
+
+```js
+ratings: [ { score: 2, by: "mn" }, { score: 9, by: "anon" } ]
+```
+
+​	**score**字段的点字段名为 **"ratings.score"**。
+
+###### Compound Bounds of Non-array Field and Field from an Array
+
+​	假设有集合 **survey2**，其中文档有字段 **item**，和数组字段 **ratings**。
+
+```js
+{
+  _id: 1,
+  item: "ABC",
+  ratings: [ { score: 2, by: "mn" }, { score: 9, by: "anon" } ]
+}
+{
+  _id: 2,
+  item: "XYZ",
+  ratings: [ { score: 5, by: "anon" }, { score: 7, by: "wv" } ]
+}
+```
+
+​	在非数组字段 **item** 和 **ratings** 里的两个字段 **ratings.score** 和 **ratings.by** 创建复合索引。
+
+```js
+db.survey2.createIndex( { "item": 1, "ratings.score": 1, "ratings.by": 1 } )
+```
+
+​	对这三个字段查询：
+
+```js
+db.servey2.find( { item: "XYZ", "ratings.score": { $lte: 5 }, "ratings.by": "anon" } )
+```
+
+​	对每个谓词来说：
+
+- **item** 的边界：谓词 "XYZ"是 [ [ "XYZ", "XYZ" ] ];
+- **score** 的边界：谓词 { $lte: 5 } 是 [ [ -Infinity, 5 ] ];
+- **by** 的边界：谓词 "anon" 是 [ "anon", "anon" ].
+
+​    MongoDB可以复合 **item** 键的，和 **ratings.score** 或者 **ratings.by** 两者其中之一的边界，取决于查询的谓词和索引键值。MongoDB不保证后两者谁会与 **item** 键复合。比如，**item**键可能与 **ratings.score** 复合，也可能与 **ratings.score** 复合。
+
+​	然而，查询如果要将 **"ratings.score"** 和 **"ratings.by"** 的边界复合，则必须使用 `$elemMatch`。
+
+###### Compound Bounds of Index Fields from an Array 复合数组中的索引字段的边界
+
+​	要把相同数组的索引键的边界复合起来：
+
+- 索引键必须共用同一字段路径但不包括字段名，并且
+- 查询必须在该路径上使用 `$elemMatch` 在字段上指定谓词。
+
+​    对于在嵌套文档中的一个字段，例如 **"a.b.c.d"** 的点字段名是 **d** 的字段路径。要复合相同数组中的索引键的边界，`$elemMatch`必须在路径上但不能有字段名本身，即 **"a.b.c"**。
+
+### Unique Multikey Index 唯一多键索引
+
+​	对于唯一索引，唯一性约束适用于集合中的多个文档而不是单独一个文档。
+
+​	因为唯一性约束适用单个文档，那么对于唯一多键索引，如果一个文档的索引键值不是从别的文档复制过来的，该文档就可能会有导致重复的索引键值的数组元素。
+
+### Limitations 限制
+
+#### Compound Multikey Indexes 复合多键索引
+
+​	对于复合多键索引，每个索引的文档可以有最多一个值为数组的索引字段。也就是说：
+
+- 如果有多于一个值为数组的字段值，则不能创建复合多键索引。比如以下文档：
+
+  ```js
+  { _id: 1, a: [1, 2], b: [1, 2] }
+  ```
+
+  则不能在集合上创建复合多键索引 `{ a: 1, b: 1 }`，因为**a**和**b**字段的值都是数组。
+
+- 或者，如果复合多键索引已存在，你不能插入一个违反该限制的文档。
+
+  比如以下集合中有这样的文档：
+
+  ```js
+  { _id: 1, a: [1, 2], b: 1, category: "A array" }
+  { _id: 2, a: 1, b: [1, 2], category: "B array" }
+  ```
+
+  一个复合多键索引 `{ a: 1, b: 2 }` 是每个文档都有的，只有一个被复合多键索引索引的字段是一个数组，也就是没有文档的 **a** 和 **b** 的值都是数组。然而，创建复合多键索引之后，如果你尝试插入一个 **a** 和 **b** 字段的值都是数组的文档时，MongoDB会把这次插入失效处理。
+
+如果一个字段是一个文档数组，你可以索引签到的字段来创建复合索引。比如，有包含以下文档的集合：
+
+```js
+{ _id: 1, a: [ { x: 5, z: [ 1, 2 ] }, { z: [ 1, 2 ] } ] }
+{ _id: 2, a: [ { x: 5 }, { z: 4 } ] }
+```
+
+​	你可以创建一个复合索引： `{ "a.x": 1, "a.z": 1 }`。最多只有一个值为数组的索引字段的限制仍然适用。
+
+### Sorting 排序
+
+​	当对一个使用多键索引的数组排序时，查询计划中会包含一个阻塞的 **SORT** 阶段。新的排序行为可能会对性能产生负面影响。
+
+​	在阻塞的 **SORT**，所有的输入必须经过排序步骤才可以输出。在一个非阻塞或索引排序中，排序步骤扫描索引来产生按要求排序的结果。
+
+#### Shard Keys 分片的键
+
+​	不能将多键索引声明为分片索引键。然而如果分片索引键是一个复合索引的前缀，且除了分片的键之外的一个键的值是数组，就允许复合索引变成一个复合多键索引。复合多键索引会影响性能。
+
+#### Hashed Indexes 哈希索引
+
+​	哈希索引不能作为多键索引。
+
+#### Query on the Array Field as a Whole 以数组字段的全部作为查询
+
+​	当一个查询的过滤声明一个 [整个数组的精确匹配](https://docs.mongodb.com/manual/tutorial/query-arrays/#array-match-exact)，MongoDB可以使用多键索引来查询数组的第一个元素但不能使用多键索引扫描来发现整个数组。相反，使用多键索引来查找数组的第一个元素之后，MongoDB将关联的文档都加载出来，并且将文档中的数组符合查询条件的过滤出来。
+
+​	比如，有 **inventory** 集合包含以下文档：
+
+```js
+{ _id: 5, type: "food", item: "aaa", ratings: [ 5, 8, 9 ] }
+{ _id: 6, type: "food", item: "bbb", ratings: [ 5, 9 ] }
+{ _id: 7, type: "food", item: "ccc", ratings: [ 9, 5, 8 ] }
+{ _id: 8, type: "food", item: "ddd", ratings: [ 9, 5 ] }
+{ _id: 9, type: "food", item: "eee", ratings: [ 5, 9, 5 ] }
+```
+
+​	该集合在字段 **ratings** 上有一个多键索引：
+
+```js
+db.inventory.createIndex( { ratings: 1 } )
+```
+
+​	以下查询 **ratings** 字段值为 [ 5, 9 ] 的文档：
+
+```js
+db.inventory.find( { ratings: [ 5, 9 ] } )
+```
+
+​	MongoDB可以用多键索引来找到 **ratings** 数组中包含 **5** 的所有文档。然后，MongoDB加载出来这些文档，并且过滤出 **ratings** 数组等于 **[ 5, 9 ]** 的文档。
+
+### See More Examples
+
+​	[Examples](https://docs.mongodb.com/manual/core/index-multikey/#examples)
+
+## Text Indexes 文本索引
+

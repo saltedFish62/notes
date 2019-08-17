@@ -8,7 +8,7 @@
 
 ​	聚合操作处理数据记录并且返回计算后的结果。聚合操作可以把多个文档的值组合到一起，并且对组合后的数据执行一系列操作最终返回一个结果。MongoDB提供了三种聚合的方式： Aggregation pipeline, Map-reduce function 和  single purpose aggregation methods。
 
-## Aggregation pipeline 聚合管道
+## Aggregation pipeline 聚合流水线
 
 ​	聚合管道是数据聚合框架，基于数据处理流水线概念建模。
 

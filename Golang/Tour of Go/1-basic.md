@@ -1,4 +1,4 @@
-# begin
+# Packages, variables and functions
 
 ## Packages 包
 
@@ -298,6 +298,8 @@ func main() {
 
 ```
 
+# Flow Control statements: for, if, else, switch, and defer
+
 ## For 循环
 
 ​	Go 只有一个循环结构，`for` 循环。大致的结构与c相似，但是省去了小括号，并且大括号不可省略。例如：
@@ -452,6 +454,8 @@ done
 0
 <<<<<<<<<<<<<<<<<<<<<
 ```
+
+# More Types: structs, slices and maps
 
 ## Pointers 指针
 
@@ -818,6 +822,96 @@ func WordCount(s string) map[string]int {
 
 func main() {
 	wc.Test(WordCount)
+}
+```
+
+## Function values
+
+​	函数也是值，他们可以像其他类型的值一样传递。函数值可以作为函数的参数并且返回值：
+
+```go
+package main
+
+import (
+	"fmt"
+	"math"
+)
+
+// fn 是一个函数，参数表为(float64, float64)，返回值为 float64
+func compute(fn func(float64, float64) float64) float64 {
+	return fn(3, 4)
+}
+
+func main() {
+	hypot := func(x, y float64) float64 {
+		return math.Sqrt(x*x + y*y)
+	}
+	fmt.Println(hypot(5, 12))
+
+	fmt.Println(compute(hypot))
+	fmt.Println(compute(math.Pow))
+}
+```
+
+## Function closures 函数闭包
+
+​	Go 的函数可以是个闭包。这个闭包的概念跟js闭包的概念有点像，写法也差不多。不同的在于形成闭包的函数返回类型为函数。与js同样闭包内的变量不允许外界访问到。
+
+```go
+package main
+
+import "fmt"
+
+func adder() func(int) int {
+	sum := 0
+	return func(x int) int {
+		sum += x
+		return sum
+	}
+}
+
+func main() {
+	pos, neg := adder(), adder()
+	for i := 0; i < 10; i++ {
+		fmt.Println(
+			pos(i),
+			neg(-2*i),
+		)
+	}
+}
+```
+
+## Exercise:  Fibonacci closure
+
+Let's have some fun with functions.
+
+Implement a `fibonacci` function that returns a function (a closure) that returns successive [fibonacci numbers](https://en.wikipedia.org/wiki/Fibonacci_number) (0, 1, 1, 2, 3, 5, ...).
+
+```go
+package main
+
+import "fmt"
+
+// fibonacci is a function that returns
+// a function that returns an int.
+func fibonacci() func() int {
+	fib := 0
+	first := 1
+	second := 1
+	return func() int {
+		result := fib
+		fib = first
+		first = second
+		second = fib + first
+		return result
+	}
+}
+
+func main() {
+	f := fibonacci()
+	for i := 0; i < 10; i++ {
+		fmt.Println(f())
+	}
 }
 ```
 
